@@ -4,8 +4,10 @@ from flask import make_response, abort, request
 from flask_login import current_user
 from werkzeug.exceptions import Forbidden
 from functools import wraps
-from os.path import basename, isfile
+from os.path import basename, isfile, join
 from datetime import timedelta, datetime
+import tempfile
+import libarchive.public as libarchive
 
 from fame.core.store import store
 from fame.core.config import Config
@@ -129,11 +131,23 @@ def file_download(filepath):
     if not isfile(filepath):
         abort(404)
     else:
-        with open(filepath, 'rb') as fd:
-            response = make_response(fd.read())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            basename = basename(filepath)
+            zip_path = join(tmp_dir, basename + ".zip")
+            with libarchive.file_writer(
+                zip_path,
+                "zip",
+                encryption="aes256",
+                password="infected",
+            ) as archive:
+                archive.add_files(filepath)
 
-        response.headers["Content-Disposition"] = "attachment; filename={0}".format(basename(filepath))
-        response.headers["Content-Type"] = "application/binary"
+            with open(zip_path, "rb") as f:
+                tmp_zip = f.read()
+
+        response = make_response(tmp_zip)
+        response.headers["Content-Disposition"] = "attachment; filename={0}.zip".format(basename(filepath))
+        response.headers["Content-Type"] = "application/zip"
 
         return response
 
